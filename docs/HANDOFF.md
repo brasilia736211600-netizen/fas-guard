@@ -6,10 +6,11 @@
 - **Owner account:** `brasilia736211600-netizen`
 - **Repository:** https://github.com/brasilia736211600-netizen/fas-guard (public)
 - **Rolling release (direct APK):** https://github.com/brasilia736211600-netizen/fas-guard/releases/latest
-- **Current version:** `1.0.1` (versionCode `2`)
+- **Current version:** `1.0.1` (versionCode `2`) — verified from the built APK
+- **Release asset policy:** only `FASGuard-latest.apk` in the rolling release (versioned APKs are CI artifacts; git tag `v1.0.1` marks the source)
 - **minSdk / target:** 29 (Android 10) / 35
 - **Signing cert SHA-256:** `d6cbd8db8aee40a088f8f388afa33fa9b5f592b4d1135db87e5c76df27000445`
-- **CI status at hand-off:** ✅ green — workflow `Build APK` (see `gh run list`)
+- **CI status at hand-off:** ✅ green — run `45227931546`, workflow `Build APK`
 - **Local source:** `/data/data/com.termux/files/home/FAS-Test/FasGuard`
 - **Installable APK on device:** `~/storage/downloads/FASGuard-latest.apk`
 
@@ -149,6 +150,7 @@ res/values{,-ar}/strings.xml, themes, vector icons
 | K6 | Low | `QUERY_ALL_PACKAGES` may block Play distribution | manifest | `<queries>` / F-Droid build in P5 |
 | K7 | Low | UI strings hardcoded (not bilingual yet) | `MainActivity` | P3 string extraction |
 | K8 | Info | `BootReceiver` auto-start requires prior VPN consent | `BootReceiver` | Documented |
+| K9 | Fixed | versionCode/Name were pinned in the manifest and ignored `aapt2` flags | `AndroidManifest.xml` | Fixed in 1.0.1; inject via `build.sh` only |
 
 ---
 

@@ -5,6 +5,8 @@
 - Added continuity docs: `AGENTS.md`, `docs/HANDOFF.md`, `docs/ROADMAP.md`, `docs/TESTPLAN.md`.
 - CI: replaced the failing `android-actions/setup-android@v3` with the runner's bundled `sdkmanager`.
 - Added Arabic launcher label (`values-ar`).
+- Fixed: versionCode/versionName are now injected by `aapt2` (manifest no longer pins 1.0).
+- Release now publishes the stable alias `FASGuard-latest.apk`.
 
 ## 1.0.0 — 2026-11-23
 - First working build: per-app firewall, global/per-app upload+download shaping,

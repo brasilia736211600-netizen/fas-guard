@@ -3,6 +3,8 @@ name: Build APK
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
   workflow_dispatch:
 
 concurrency:
@@ -82,6 +84,6 @@ jobs:
             Automated build of `${{ github.sha }}`.
 
             Download the APK below, allow "install unknown apps" and install.
-          files: dist/*.apk
+          files: dist/FASGuard-latest.apk
           make_latest: true
           prerelease: false

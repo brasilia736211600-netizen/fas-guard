@@ -28,6 +28,7 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 ## P1 — On-device validation & triage (next)
 
 - [x] Fixed the global-connectivity TCP offset bug (1.1.0)
+- [x] 1.2.0 built, signed and published; release metadata verified (vCode 4 / minSdk 29 / cert)
 - [ ] User installs `FASGuard-latest.apk` and runs `docs/TESTPLAN.md`
 - [ ] Collect `adb logcat -s FASGuard AndroidRuntime` output if a test fails
 - [ ] Fix every P0/P1 failure in the test plan (crash, no-traffic, leak, wrong blocking)

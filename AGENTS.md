@@ -10,6 +10,8 @@
 4. **Keep `minSdk = 29` (Android 10)** unless the user explicitly changes the decision. UID attribution depends on API 29.
 5. Java 11 source level. No comments unless they add real value. Keep files focused.
 6. Every push to `main` must keep CI green. Check with `gh run list -R brasilia736211600-netizen/fas-guard`.
+7. **Work only inside this repo.** Do not write to `~/storage/downloads`, `/tmp`, or Termux temp dirs. Deliver APKs through the GitHub release URL; verify them by downloading into `build/` and deleting afterwards.
+8. At the end of every session, update `docs/HANDOFF.md`: commit, CI run, verified release metadata, next task, and a **STOP POINT** if pausing. Leave the tree clean.
 
 ## Publish path
 

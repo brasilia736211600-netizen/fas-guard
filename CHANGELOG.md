@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 — 2026-11-23
+- **Per-app policy editor** (tap any app): firewall on/off, block, speed limit, route, DNS.
+- **Per-app VPN/proxy route**: direct, inherit global, or a saved SOCKS5/HTTP profile.
+  OpenVPN/WireGuard profiles are listed and will be enforced when native support lands (P6).
+- **Per-app DNS override** with validation and automatic fallback to the global resolver.
+- **Unit selector** for limits: kbit/s, KB/s, Mbit/s, MB/s — global and per-app; values convert live when the unit changes.
+- Legacy settings are migrated automatically to the new per-app rule model.
+
 ## 1.1.0 — 2026-11-23
 - **Critical fix:** downlink TCP payload was built with a wrong buffer offset, throwing on every packet, sending RST and killing all connectivity. Fixed to offset `0`.
 - IPv6 block is now controlled by the setting: when disabled, no IPv6 route is installed (helps IPv6-only carriers).

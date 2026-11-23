@@ -39,6 +39,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.fas.guard.core.AppRule;
 import com.fas.guard.core.Apps;
 import com.fas.guard.core.Prefs;
 import com.fas.guard.core.Profile;
@@ -251,15 +252,34 @@ public class MainActivity extends Activity {
         root.addView(spacer(12));
 
         LinearLayout lim = card();
-        lim.addView(tv("Global speed limit (kbit/s · 0 = unlimited)", 15, TEXT, true));
-        lim.addView(spacer(8));
-        EditText down = num(String.valueOf(prefs.globalDownKbps()), "Download");
-        EditText up = num(String.valueOf(prefs.globalUpKbps()), "Upload");
+        lim.addView(tv("Global speed limit", 15, TEXT, true));
+        lim.addView(tv("0 = unlimited · choose your preferred unit", 11, MUTED, false));
+        String gUnit = prefs.globalUnit();
+        EditText down = num(String.valueOf(AppRule.displayFromKbps(prefs.globalDownKbps(), gUnit)), "0");
+        EditText up = num(String.valueOf(AppRule.displayFromKbps(prefs.globalUpKbps(), gUnit)), "0");
+        Spinner gUnitSp = spinner(AppRule.UNITS, AppRule.unitIndex(gUnit));
+        final String[] gCurrent = {gUnit};
+        gUnitSp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
+                String nu = AppRule.UNITS[pos];
+                if (nu.equals(gCurrent[0])) return;
+                int dk = AppRule.kbpsFromDisplay(parse(down), gCurrent[0]);
+                int uk = AppRule.kbpsFromDisplay(parse(up), gCurrent[0]);
+                down.setText(String.valueOf(AppRule.displayFromKbps(dk, nu)));
+                up.setText(String.valueOf(AppRule.displayFromKbps(uk, nu)));
+                gCurrent[0] = nu;
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        lim.addView(labeled("Unit", gUnitSp));
         lim.addView(labeled("Download", down));
         lim.addView(labeled("Upload", up));
         Button applyLim = btn("Apply limits");
         applyLim.setOnClickListener(v -> {
-            prefs.setGlobalLimits(parse(down), parse(up));
+            String u = spinnerValue(gUnitSp);
+            prefs.setGlobalUnit(u);
+            prefs.setGlobalLimits(AppRule.kbpsFromDisplay(parse(down), u),
+                    AppRule.kbpsFromDisplay(parse(up), u));
             toast("Reconnect to apply the new limits");
         });
         lim.addView(applyLim);
@@ -273,7 +293,15 @@ public class MainActivity extends Activity {
         dns.addView(labeled("Server", dnsField));
         Button applyDns = btn("Apply DNS");
         applyDns.setOnClickListener(v -> {
-            prefs.setDns(dnsField.getText().toString().trim());
+            String ds = dnsField.getText().toString().trim();
+            if (ds.isEmpty()) ds = Prefs.DEFAULT_DNS;
+            try {
+                java.net.InetAddress.getByName(ds);
+            } catch (Exception e) {
+                toast("Invalid DNS address");
+                return;
+            }
+            prefs.setDns(ds);
             toast("Reconnect to apply DNS");
             hDns.setText("DNS: " + prefs.dns());
         });
@@ -406,52 +434,129 @@ public class MainActivity extends Activity {
             texts.addView(tv(info.label, 14, TEXT, false));
             TextView sub = tv(info.pkg + "  ·  " + (info.system ? "system" : "user") + "  ·  uid " + info.uid, 10, MUTED, false);
             texts.addView(sub);
-            int d = prefs.downKbps(info.pkg), u = prefs.upKbps(info.pkg);
-            if (d > 0 || u > 0) texts.addView(tv("limit ↓" + d + " ↑" + u + " kbit/s", 10, ACCENT, false));
+            AppRule rule = prefs.appRule(info.pkg);
+            texts.addView(tv(rule.describe(), 10,
+                    rule.isBlocked() ? DANGER : (rule.hasLimit() || rule.proxy || rule.dns ? ACCENT : MUTED), false));
             row.addView(texts);
 
-            Button limit = new Button(MainActivity.this);
-            limit.setAllCaps(false);
-            limit.setText("Limit");
-            limit.setTextSize(11);
-            limit.setTextColor(ACCENT);
-            limit.setBackground(bg(0xFF1B2740, 12));
-            limit.setPadding(dp(10), dp(4), dp(10), dp(4));
-            limit.setOnClickListener(v -> limitDialog(info));
-            row.addView(limit);
-
-            CheckBox allow = check("Allow", !prefs.isBlocked(info.pkg));
-            allow.setTextSize(11);
-            allow.setOnCheckedChangeListener((v, c) -> {
-                java.util.Set<String> set = prefs.blockedPackages();
-                if (c) set.remove(info.pkg); else set.add(info.pkg);
-                prefs.setBlockedPackages(set);
-                toast(c ? info.label + " allowed" : info.label + " blocked");
+            CheckBox block = check("Block", rule.isBlocked());
+            block.setTextSize(11);
+            block.setOnCheckedChangeListener((v, c) -> {
+                AppRule r = prefs.appRule(info.pkg);
+                r.blocked = c;
+                if (c) r.firewall = true;
+                prefs.setAppRule(r);
+                toast(c ? info.label + " blocked" : info.label + " allowed");
             });
-            row.addView(allow);
+            row.addView(block);
+            row.setOnClickListener(v -> appDetail(info));
             return row;
         }
     }
 
-    private void limitDialog(Apps.Info info) {
+    private void appDetail(Apps.Info info) {
+        AppRule r = prefs.appRule(info.pkg);
+
+        ScrollView sv = new ScrollView(this);
         LinearLayout box = col();
-        box.setPadding(dp(16), dp(8), dp(16), 0);
-        EditText down = num(String.valueOf(prefs.downKbps(info.pkg)), "Download kbit/s");
-        EditText up = num(String.valueOf(prefs.upKbps(info.pkg)), "Upload kbit/s");
-        box.addView(labeled("Download (kbit/s)", down));
-        box.addView(labeled("Upload (kbit/s)", up));
-        box.addView(tv("0 means unlimited. Reconnect for the shaper to pick up changes.", 11, MUTED, false));
+        box.setPadding(dp(16), dp(8), dp(16), dp(8));
+
+        box.addView(tv("Firewall", 14, TEXT, true));
+        CheckBox fw = check("Enable firewall for this app", r.firewall);
+        CheckBox blk = check("Block all traffic", r.blocked);
+        box.addView(fw);
+        box.addView(blk);
+        box.addView(spacer(8));
+
+        box.addView(tv("Speed limit", 14, TEXT, true));
+        CheckBox limOn = check("Enable limit for this app", r.limit);
+        EditText down = num(String.valueOf(AppRule.displayFromKbps(r.downKbps, r.unit)), "0");
+        EditText up = num(String.valueOf(AppRule.displayFromKbps(r.upKbps, r.unit)), "0");
+        Spinner unitSp = spinner(AppRule.UNITS, AppRule.unitIndex(r.unit));
+        final String[] currentUnit = {r.unit};
+        unitSp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
+                String nu = AppRule.UNITS[pos];
+                if (nu.equals(currentUnit[0])) return;
+                int dk = AppRule.kbpsFromDisplay(parse(down), currentUnit[0]);
+                int uk = AppRule.kbpsFromDisplay(parse(up), currentUnit[0]);
+                down.setText(String.valueOf(AppRule.displayFromKbps(dk, nu)));
+                up.setText(String.valueOf(AppRule.displayFromKbps(uk, nu)));
+                currentUnit[0] = nu;
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+        box.addView(limOn);
+        box.addView(labeled("Unit", unitSp));
+        box.addView(labeled("Download (0 = unlimited)", down));
+        box.addView(labeled("Upload (0 = unlimited)", up));
+        box.addView(spacer(8));
+
+        box.addView(tv("VPN / proxy route", 14, TEXT, true));
+        CheckBox proxyOn = check("Route this app through a profile", r.proxy);
+        List<String> labels = new ArrayList<>();
+        final List<String> values = new ArrayList<>();
+        labels.add("Inherit global proxy");
+        values.add(AppRule.ROUTE_INHERIT);
+        labels.add("Direct (no proxy)");
+        values.add(AppRule.ROUTE_DIRECT);
+        int sel = AppRule.ROUTE_DIRECT.equals(r.route) ? 1 : 0;
+        for (Profile p : store.list()) {
+            labels.add((p.delegates() ? "VPN: " : "Proxy: ") + p.name
+                    + (p.delegates() ? " (native in P6)" : ""));
+            values.add(p.id);
+            if (p.id.equals(r.route)) sel = values.size() - 1;
+        }
+        Spinner routeSp = spinner(labels.toArray(new String[0]), sel);
+        box.addView(proxyOn);
+        box.addView(labeled("Profile", routeSp));
+        box.addView(tv("SOCKS5/HTTP profiles are enforced now. OpenVPN/WireGuard profiles become enforceable with native support (P6).",
+                10, MUTED, false));
+        box.addView(spacer(8));
+
+        box.addView(tv("DNS", 14, TEXT, true));
+        CheckBox dnsOn = check("Custom DNS for this app", r.dns);
+        EditText dnsField = input(r.dnsServer, "inherit global: " + prefs.dns());
+        dnsField.setInputType(InputType.TYPE_CLASS_TEXT);
+        box.addView(dnsOn);
+        box.addView(labeled("Server", dnsField));
+
+        sv.addView(box);
+
         new AlertDialog.Builder(this)
                 .setTitle(info.label)
-                .setView(box)
+                .setView(sv)
                 .setPositiveButton("Save", (d, w) -> {
-                    prefs.setPerAppLimit(info.pkg, parse(down), parse(up));
+                    String u = spinnerValue(unitSp);
+                    if (dnsOn.isChecked()) {
+                        String ds = dnsField.getText().toString().trim();
+                        if (ds.isEmpty()) { toast("DNS cannot be empty"); return; }
+                        try {
+                            java.net.InetAddress.getByName(ds);
+                        } catch (Exception e) {
+                            toast("Invalid DNS address");
+                            return;
+                        }
+                    }
+                    r.firewall = fw.isChecked();
+                    r.blocked = blk.isChecked();
+                    r.limit = limOn.isChecked();
+                    r.unit = u;
+                    r.downKbps = AppRule.kbpsFromDisplay(parse(down), u);
+                    r.upKbps = AppRule.kbpsFromDisplay(parse(up), u);
+                    r.proxy = proxyOn.isChecked();
+                    r.route = values.get(routeSp.getSelectedItemPosition());
+                    r.dns = dnsOn.isChecked();
+                    r.dnsServer = r.dns ? dnsField.getText().toString().trim() : "";
+                    prefs.setAppRule(r);
                     views[1] = null;
-                    toast("Reconnect to apply the limit");
+                    select(1);
+                    toast("Saved. Reconnect to apply shaper changes.");
                 })
-                .setNeutralButton("Clear", (d, w) -> {
-                    prefs.setPerAppLimit(info.pkg, 0, 0);
+                .setNeutralButton("Reset", (d, w) -> {
+                    prefs.removeAppRule(info.pkg);
                     views[1] = null;
+                    select(1);
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -853,6 +958,20 @@ public class MainActivity extends Activity {
         EditText e = input(value, hint);
         e.setInputType(InputType.TYPE_CLASS_NUMBER);
         return e;
+    }
+
+    private Spinner spinner(String[] values, int selected) {
+        Spinner s = new Spinner(this);
+        ArrayAdapter<String> a = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, values);
+        s.setAdapter(a);
+        if (selected >= 0 && selected < values.length) s.setSelection(selected);
+        return s;
+    }
+
+    private String spinnerValue(Spinner s) {
+        Object o = s.getSelectedItem();
+        return o == null ? "" : o.toString();
     }
 
     private CheckBox check(String label, boolean checked) {

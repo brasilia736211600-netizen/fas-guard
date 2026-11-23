@@ -6,12 +6,12 @@
 - **Owner account:** `brasilia736211600-netizen`
 - **Repository:** https://github.com/brasilia736211600-netizen/fas-guard (public)
 - **Rolling release (direct APK):** https://github.com/brasilia736211600-netizen/fas-guard/releases/latest
-- **Current version:** `1.0.1` (versionCode `2`) — verified from the built APK
+- **Current version:** `1.2.0` (versionCode `4`)
 - **Release asset policy:** only `FASGuard-latest.apk` in the rolling release (versioned APKs are CI artifacts; git tag `v1.0.1` marks the source)
 - **minSdk / target:** 29 (Android 10) / 35
 - **Signing cert SHA-256:** `d6cbd8db8aee40a088f8f388afa33fa9b5f592b4d1135db87e5c76df27000445`
 - **CI status at hand-off:** ✅ green — run `45228440422`, workflow `Build APK`
-- **Git tag:** `v1.0.1`
+- **Git tag:** `v1.0.1` (later tags: `v1.1.0`, `v1.2.0` when published)
 - **Local source:** `/data/data/com.termux/files/home/FAS-Test/FasGuard`
 - **Installable APK on device:** `~/storage/downloads/FASGuard-latest.apk`
 
@@ -152,6 +152,8 @@ res/values{,-ar}/strings.xml, themes, vector icons
 | K7 | Low | UI strings hardcoded (not bilingual yet) | `MainActivity` | P3 string extraction |
 | K8 | Info | `BootReceiver` auto-start requires prior VPN consent | `BootReceiver` | Documented |
 | K9 | Fixed | versionCode/Name were pinned in the manifest and ignored `aapt2` flags | `AndroidManifest.xml` | Fixed in 1.0.1; inject via `build.sh` only |
+| K10 | **Fixed** | TCP downlink payload used `off=n` instead of `0`, throwing on every data packet and resetting all connections (the reported "internet dies") | `TcpFlow.pump` | Fixed in 1.1.0; verify with T1 |
+| K11 | Info | Per-app VPN profiles are selectable but fall back to global until P6 | `Routing` | Documented in UI |
 
 ---
 
@@ -171,11 +173,16 @@ When resuming (human or agent):
 4. Work in small commits; push each green step; update this file in the same commit.
 5. Keep the phone cool: no local builds, no big downloads, no long-running loops.
 
-**Next task:** P1 — obtain the user's device test results against `docs/TESTPLAN.md`, then triage failures (K1 first).
+**Next task:** P1 — user installs 1.2.0, re-runs `docs/TESTPLAN.md` (T1 first) and reports; then triage. P2 work may continue in parallel if the device is unavailable.
 
 ---
 
 ## 9) Session log
+
+### Session 2 — 2026-11-23
+- Fixed the connectivity-killing TCP offset bug (K10) → 1.1.0.
+- Added the per-app policy engine + editor, per-app DNS/proxy routing, unit selectors → 1.2.0.
+- Standby: awaiting the user's device retest.
 
 ### Session 1 — 2026-11-23
 - Built the MVP engine + UI, then set up CI (fixed the `setup-android@v3` failure).

@@ -9,18 +9,22 @@ import org.json.JSONObject;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Single source of truth for every user setting (no external dependencies). */
 public final class Prefs {
 
     private static final String FILE = "fasguard";
+    private static final String RULES = "app_rules_v1";
 
     public static final String DEFAULT_DNS = "1.1.1.1";
 
     private static Prefs instance;
     final SharedPreferences sp;
+    private volatile Map<String, AppRule> rules;
 
     private Prefs(Context ctx) {
         sp = ctx.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
@@ -54,55 +58,156 @@ public final class Prefs {
     public int mtu() { return sp.getInt("mtu", 1500); }
     public void setMtu(int v) { sp.edit().putInt("mtu", v).apply(); }
 
-    /* ---------------- firewall rules ---------------- */
+    /* ---------------- per-app rules ---------------- */
+
+    private void ensureRules() {
+        if (rules != null) return;
+        synchronized (this) {
+            if (rules != null) return;
+            Map<String, AppRule> m = new ConcurrentHashMap<>();
+            String raw = sp.getString(RULES, null);
+            if (raw != null) {
+                try {
+                    JSONObject o = new JSONObject(raw);
+                    Iterator<String> it = o.keys();
+                    while (it.hasNext()) {
+                        String k = it.next();
+                        AppRule r = AppRule.fromJson(o.getJSONObject(k), k);
+                        r.pkg = k;
+                        m.put(k, r);
+                    }
+                } catch (Exception ignored) { }
+            } else {
+                migrateLegacy(m);
+                persist(m);
+            }
+            rules = m;
+        }
+    }
+
+    private void migrateLegacy(Map<String, AppRule> m) {
+        for (String pkg : sp.getStringSet("blocked", Collections.emptySet())) {
+            AppRule r = new AppRule(pkg);
+            r.firewall = true;
+            r.blocked = true;
+            m.put(pkg, r);
+        }
+        try {
+            JSONObject o = new JSONObject(sp.getString("limits", "{}"));
+            Iterator<String> it = o.keys();
+            while (it.hasNext()) {
+                String pkg = it.next();
+                JSONArray a = o.getJSONArray(pkg);
+                AppRule r = m.get(pkg);
+                if (r == null) r = new AppRule(pkg);
+                r.limit = true;
+                r.unit = AppRule.U_KBIT;
+                r.downKbps = Math.max(0, a.optInt(0, 0));
+                r.upKbps = Math.max(0, a.optInt(1, 0));
+                m.put(pkg, r);
+            }
+        } catch (Exception ignored) { }
+    }
+
+    private void persist(Map<String, AppRule> m) {
+        JSONObject o = new JSONObject();
+        try {
+            for (AppRule r : m.values()) o.put(r.pkg, r.toJson());
+        } catch (Exception ignored) { }
+        sp.edit().putString(RULES, o.toString()).apply();
+    }
+
+    public synchronized Map<String, AppRule> appRules() {
+        ensureRules();
+        return rules;
+    }
+
+    public AppRule appRule(String pkg) {
+        ensureRules();
+        AppRule r = rules.get(pkg);
+        return r == null ? new AppRule(pkg) : r.copy();
+    }
+
+    public synchronized void setAppRule(AppRule r) {
+        ensureRules();
+        rules.put(r.pkg, r.copy());
+        persist(rules);
+    }
+
+    public synchronized void removeAppRule(String pkg) {
+        ensureRules();
+        rules.remove(pkg);
+        persist(rules);
+    }
+
+    /* legacy-compatible accessors */
 
     public Set<String> blockedPackages() {
-        return new HashSet<>(sp.getStringSet("blocked", Collections.emptySet()));
+        Set<String> out = new HashSet<>();
+        for (AppRule r : appRules().values()) if (r.isBlocked()) out.add(r.pkg);
+        return out;
     }
 
     public void setBlockedPackages(Set<String> v) {
-        sp.edit().putStringSet("blocked", new HashSet<>(v)).apply();
+        ensureRules();
+        synchronized (this) {
+            for (AppRule r : rules.values()) r.blocked = v.contains(r.pkg);
+            for (String pkg : v) {
+                if (!rules.containsKey(pkg)) {
+                    AppRule r = new AppRule(pkg);
+                    r.blocked = true;
+                    rules.put(pkg, r);
+                }
+            }
+            persist(rules);
+        }
     }
 
     public boolean isBlocked(String pkg) {
-        return blockedPackages().contains(pkg);
+        AppRule r = appRule(pkg);
+        return r.isBlocked();
     }
 
-    /* ---------------- limits (kbit/s, 0 = unlimited) ---------------- */
+    /* ---------------- limits (internal unit: kbit/s, 0 = unlimited) ---------------- */
 
     public int globalDownKbps() { return sp.getInt("lim_down", 0); }
     public int globalUpKbps() { return sp.getInt("lim_up", 0); }
+
     public void setGlobalLimits(int down, int up) {
         sp.edit().putInt("lim_down", clampLimit(down)).putInt("lim_up", clampLimit(up)).apply();
     }
 
-    public int downKbps(String pkg) { return perAppLimits().getOrDefault(pkg, new int[]{0, 0})[0]; }
-    public int upKbps(String pkg) { return perAppLimits().getOrDefault(pkg, new int[]{0, 0})[1]; }
+    public String globalUnit() {
+        String u = sp.getString("lim_unit", AppRule.U_KBIT);
+        for (String x : AppRule.UNITS) if (x.equals(u)) return u;
+        return AppRule.U_KBIT;
+    }
+
+    public void setGlobalUnit(String unit) { sp.edit().putString("lim_unit", unit).apply(); }
+
+    public int downKbps(String pkg) {
+        AppRule r = appRule(pkg);
+        return r.limit ? r.downKbps : 0;
+    }
+
+    public int upKbps(String pkg) {
+        AppRule r = appRule(pkg);
+        return r.limit ? r.upKbps : 0;
+    }
 
     public void setPerAppLimit(String pkg, int down, int up) {
-        Map<String, int[]> map = perAppLimits();
-        if (down == 0 && up == 0) map.remove(pkg);
-        else map.put(pkg, new int[]{clampLimit(down), clampLimit(up)});
-        JSONObject o = new JSONObject();
-        try {
-            for (Map.Entry<String, int[]> e : map.entrySet()) {
-                o.put(e.getKey(), new JSONArray().put(e.getValue()[0]).put(e.getValue()[1]));
-            }
-        } catch (Exception ignored) { }
-        sp.edit().putString("limits", o.toString()).apply();
+        AppRule r = appRule(pkg);
+        r.limit = down > 0 || up > 0;
+        r.downKbps = clampLimit(down);
+        r.upKbps = clampLimit(up);
+        setAppRule(r);
     }
 
     public Map<String, int[]> perAppLimits() {
         Map<String, int[]> out = new HashMap<>();
-        try {
-            JSONObject o = new JSONObject(sp.getString("limits", "{}"));
-            java.util.Iterator<String> it = o.keys();
-            while (it.hasNext()) {
-                String k = it.next();
-                JSONArray a = o.getJSONArray(k);
-                out.put(k, new int[]{a.optInt(0, 0), a.optInt(1, 0)});
-            }
-        } catch (Exception ignored) { }
+        for (AppRule r : appRules().values()) {
+            if (r.hasLimit()) out.put(r.pkg, new int[]{r.downKbps, r.upKbps});
+        }
         return out;
     }
 

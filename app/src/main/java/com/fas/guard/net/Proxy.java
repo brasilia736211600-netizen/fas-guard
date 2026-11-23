@@ -20,36 +20,69 @@ public final class Proxy {
 
     private Proxy() { }
 
+    /** Immutable proxy selection for one connection. */
+    public static final class Config {
+        public final boolean enabled;
+        public final String type;
+        public final String host;
+        public final int port;
+        public final String user;
+        public final String pass;
+
+        public Config(boolean enabled, String type, String host, int port, String user, String pass) {
+            this.enabled = enabled;
+            this.type = type == null ? "" : type;
+            this.host = host == null ? "" : host;
+            this.port = port;
+            this.user = user == null ? "" : user;
+            this.pass = pass == null ? "" : pass;
+        }
+
+        public static Config direct() { return new Config(false, "", "", 0, "", ""); }
+
+        public static Config fromPrefs(Prefs p) {
+            if (!p.proxyEnabled() || p.proxyHost().isEmpty()) return direct();
+            return new Config(true, p.proxyType(), p.proxyHost(), p.proxyPort(),
+                    p.proxyUser(), p.proxyPass());
+        }
+
+        public String describe() {
+            if (!enabled) return "Direct";
+            return type.toUpperCase(Locale.US) + " " + host + ":" + port;
+        }
+    }
+
     public static Socket open(VpnService vpn, Prefs prefs, InetAddress dst, int port) throws IOException {
-        boolean useProxy = prefs.proxyEnabled() && !prefs.proxyHost().isEmpty();
-        String host = useProxy ? prefs.proxyHost() : dst.getHostAddress();
-        int p = useProxy ? prefs.proxyPort() : port;
+        return open(vpn, Config.fromPrefs(prefs), dst, port);
+    }
+
+    public static Socket open(VpnService vpn, Config cfg, InetAddress dst, int port) throws IOException {
+        boolean useProxy = cfg != null && cfg.enabled && !cfg.host.isEmpty();
+        String host = useProxy ? cfg.host : dst.getHostAddress();
+        int p = useProxy ? cfg.port : port;
         Socket s = new Socket();
         if (!vpn.protect(s)) throw new IOException("protect(Socket) failed");
         s.setTcpNoDelay(true);
         s.connect(new InetSocketAddress(host, p), TIMEOUT);
         s.setSoTimeout(TIMEOUT);
         if (!useProxy) return s;
-        if ("http".equalsIgnoreCase(prefs.proxyType())) {
-            httpConnect(s, prefs, dst.getHostAddress(), port);
-        } else {
-            socks5(s, prefs, dst, port);
-        }
+        if ("http".equalsIgnoreCase(cfg.type)) httpConnect(s, cfg, dst.getHostAddress(), port);
+        else socks5(s, cfg, dst, port);
         s.setSoTimeout(0);
         return s;
     }
 
-    private static void socks5(Socket s, Prefs prefs, InetAddress dst, int port) throws IOException {
+    private static void socks5(Socket s, Config cfg, InetAddress dst, int port) throws IOException {
         OutputStream out = s.getOutputStream();
         InputStream in = s.getInputStream();
-        boolean auth = !prefs.proxyUser().isEmpty();
+        boolean auth = !cfg.user.isEmpty();
         out.write(new byte[]{5, (byte) (auth ? 2 : 1), 0, (byte) (auth ? 2 : 0)});
         out.flush();
         byte[] r = readN(in, 2);
         if (r[1] == (byte) 0xFF) throw new IOException("SOCKS5: no acceptable auth method");
         if (r[1] == 2) {
-            byte[] u = prefs.proxyUser().getBytes(StandardCharsets.UTF_8);
-            byte[] p = prefs.proxyPass().getBytes(StandardCharsets.UTF_8);
+            byte[] u = cfg.user.getBytes(StandardCharsets.UTF_8);
+            byte[] p = cfg.pass.getBytes(StandardCharsets.UTF_8);
             byte[] ab = new byte[3 + u.length + p.length];
             ab[0] = 1;
             ab[1] = (byte) u.length;
@@ -84,15 +117,15 @@ public final class Proxy {
         readN(in, skip);
     }
 
-    private static void httpConnect(Socket s, Prefs prefs, String host, int port) throws IOException {
+    private static void httpConnect(Socket s, Config cfg, String host, int port) throws IOException {
         OutputStream out = s.getOutputStream();
         InputStream in = s.getInputStream();
         StringBuilder sb = new StringBuilder();
         sb.append("CONNECT ").append(host).append(':').append(port).append(" HTTP/1.1\r\n");
         sb.append("Host: ").append(host).append(':').append(port).append("\r\n");
         sb.append("Proxy-Connection: keep-alive\r\n");
-        if (!prefs.proxyUser().isEmpty()) {
-            String token = prefs.proxyUser() + ":" + prefs.proxyPass();
+        if (!cfg.user.isEmpty()) {
+            String token = cfg.user + ":" + cfg.pass;
             String b64 = android.util.Base64.encodeToString(token.getBytes(StandardCharsets.UTF_8),
                     android.util.Base64.NO_WRAP);
             sb.append("Proxy-Authorization: Basic ").append(b64).append("\r\n");
@@ -148,8 +181,6 @@ public final class Proxy {
     }
 
     public static String describe(Prefs p) {
-        if (!p.proxyEnabled()) return "Direct";
-        return String.format(Locale.US, "%s %s:%d", p.proxyType().toUpperCase(Locale.US),
-                p.proxyHost(), p.proxyPort());
+        return Config.fromPrefs(p).describe();
     }
 }

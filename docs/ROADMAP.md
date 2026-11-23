@@ -18,8 +18,16 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 ---
 
+## Delivered early in 1.2.0 (from P2/P3 scope)
+
+- [x] Per-app policy editor: firewall, block, speed limit, route, DNS
+- [x] Per-app proxy routing (inherit/direct/profile) — SOCKS5 & HTTP enforced now
+- [x] Per-app DNS override
+- [x] Unit selector (kbit/s, KB/s, Mbit/s, MB/s) with live conversion
+
 ## P1 — On-device validation & triage (next)
 
+- [x] Fixed the global-connectivity TCP offset bug (1.1.0)
 - [ ] User installs `FASGuard-latest.apk` and runs `docs/TESTPLAN.md`
 - [ ] Collect `adb logcat -s FASGuard AndroidRuntime` output if a test fails
 - [ ] Fix every P0/P1 failure in the test plan (crash, no-traffic, leak, wrong blocking)

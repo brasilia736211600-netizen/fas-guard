@@ -33,6 +33,10 @@ adb shell dumpsys activity services com.fas.guard > fasguard-service.txt
 | T12 | Logs | Browse for a minute | Log updates, no crash, memory stable |
 | T13 | Auto-start | Enable, reboot | Tunnel returns only if VPN consent was already granted |
 | T14 | Notification | While running | Shows ↑/↓ rates; Stop action works |
+| T15 | Per-app route | App detail → proxy on → pick a SOCKS5 profile → reconnect → use app | Only that app uses the proxy; others follow global/direct |
+| T16 | Per-app DNS | App detail → custom DNS → set a resolver → reconnect → use app | Queries for that app go to the custom resolver |
+| T17 | Units | Set 1 MB/s global → reconnect → speed test | ≈8 Mbit/s; switch unit to Mbit/s, value converts live |
+| T18 | Per-app firewall off | App detail → disable firewall → reconnect? (no) → use app | App bypasses block decisions instantly |
 
 ## Nice to have
 - Airplane mode on/off while tunnel is running.

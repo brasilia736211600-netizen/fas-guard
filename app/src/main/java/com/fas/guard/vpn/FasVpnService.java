@@ -14,10 +14,12 @@ import android.os.Build;
 import android.os.ParcelFileDescriptor;
 
 import com.fas.guard.R;
+import com.fas.guard.core.AppRule;
 import com.fas.guard.core.Prefs;
 import com.fas.guard.net.Limits;
 import com.fas.guard.net.Net;
 import com.fas.guard.net.Proxy;
+import com.fas.guard.net.Routing;
 import com.fas.guard.ui.MainActivity;
 
 import java.io.FileInputStream;
@@ -73,6 +75,7 @@ public class FasVpnService extends VpnService implements Runnable {
     private Thread reaper;
     private volatile boolean alive;
     private Limits limits;
+    private Routing routing;
     private String dnsServer = Prefs.DEFAULT_DNS;
     private Prefs prefs;
     private final Object writeLock = new Object();
@@ -162,6 +165,7 @@ public class FasVpnService extends VpnService implements Runnable {
             in = new FileInputStream(tun.getFileDescriptor());
             out = new FileOutputStream(tun.getFileDescriptor());
             limits = new Limits(prefs);
+            routing = new Routing(this);
             alive = true;
             running = true;
             status = "Running";
@@ -282,7 +286,7 @@ public class FasVpnService extends VpnService implements Runnable {
         try {
             String[] pkgs = getPackageManager().getPackagesForUid(uid);
             if (pkgs == null) return false;
-            for (String pk : pkgs) if (prefs.isBlocked(pk)) return true;
+            for (String pk : pkgs) if (prefs.appRule(pk).isBlocked()) return true;
         } catch (Exception ignored) { }
         return false;
     }
@@ -300,10 +304,12 @@ public class FasVpnService extends VpnService implements Runnable {
         dnsPool.execute(() -> {
             try {
                 byte[] answer;
-                if (prefs.proxyEnabled() && !prefs.proxyHost().isEmpty()) {
-                    answer = dnsOverTcp(p, query, pkg);
+                Proxy.Config cfg = configFor(pkg);
+                String server = dnsFor(pkg);
+                if (cfg.enabled) {
+                    answer = dnsOverTcp(cfg, server, query, pkg);
                 } else {
-                    answer = dnsUdp(p, query, pkg);
+                    answer = dnsUdp(server, query, pkg);
                 }
                 if (answer == null || answer.length == 0) return;
                 long d = limits == null ? 0 : limits.delay(pkg, true, answer.length);
@@ -317,11 +323,21 @@ public class FasVpnService extends VpnService implements Runnable {
         });
     }
 
-    private byte[] dnsUdp(Net.Pkt p, byte[] query, String pkg) throws Exception {
+    private Proxy.Config configFor(String pkg) {
+        return routing == null ? Proxy.Config.fromPrefs(prefs) : routing.forApp(pkg);
+    }
+
+    private String dnsFor(String pkg) {
+        AppRule r = prefs.appRule(pkg);
+        if (r.dns && r.dnsServer != null && !r.dnsServer.trim().isEmpty()) return r.dnsServer.trim();
+        return dnsServer;
+    }
+
+    private byte[] dnsUdp(String serverAddr, byte[] query, String pkg) throws Exception {
         DatagramSocket ds = new DatagramSocket();
         if (!protect(ds)) throw new Exception("protect(DatagramSocket) failed");
         ds.setSoTimeout(5000);
-        InetAddress server = InetAddress.getByName(dnsServer);
+        InetAddress server = InetAddress.getByName(serverAddr);
         long d = limits == null ? 0 : limits.delay(pkg, false, query.length);
         if (d > 0) Thread.sleep(d);
         ds.send(new DatagramPacket(query, query.length, server, 53));
@@ -335,9 +351,9 @@ public class FasVpnService extends VpnService implements Runnable {
         return a;
     }
 
-    private byte[] dnsOverTcp(Net.Pkt p, byte[] query, String pkg) throws Exception {
-        InetAddress server = InetAddress.getByName(dnsServer);
-        Socket s = Proxy.open(this, prefs, server, 53);
+    private byte[] dnsOverTcp(Proxy.Config cfg, String serverAddr, byte[] query, String pkg) throws Exception {
+        InetAddress server = InetAddress.getByName(serverAddr);
+        Socket s = Proxy.open(this, cfg, server, 53);
         OutputStream o = s.getOutputStream();
         InputStream i = s.getInputStream();
         byte[] len = new byte[]{(byte) (query.length >> 8), (byte) query.length};
@@ -449,7 +465,7 @@ public class FasVpnService extends VpnService implements Runnable {
 
         @Override void runFlow() {
             try {
-                socket = Proxy.open(FasVpnService.this, prefs, Net.addr(remoteIp), remotePort);
+                socket = Proxy.open(FasVpnService.this, configFor(pkg), Net.addr(remoteIp), remotePort);
                 socket.setTcpNoDelay(true);
                 established = true;
                 write(packet(Net.SYN | Net.ACK, null, 0, 0));

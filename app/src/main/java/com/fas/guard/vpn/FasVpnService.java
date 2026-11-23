@@ -73,6 +73,7 @@ public class FasVpnService extends VpnService implements Runnable {
     private Thread reaper;
     private volatile boolean alive;
     private Limits limits;
+    private String dnsServer = Prefs.DEFAULT_DNS;
     private Prefs prefs;
     private final Object writeLock = new Object();
     private final ExecutorService dnsPool = Executors.newFixedThreadPool(2);
@@ -136,10 +137,18 @@ public class FasVpnService extends VpnService implements Runnable {
             b.setSession("FAS Guard");
             b.addAddress("10.111.222.1", 24);
             b.addRoute("0.0.0.0", 0);
-            b.addAddress("fd00:1:2::1", 64);
-            b.addRoute("::", 0);
+            if (prefs.blockIpv6()) {
+                b.addAddress("fd00:1:2::1", 64);
+                b.addRoute("::", 0);
+            }
             String dns = prefs.dns();
-            try { b.addDnsServer(dns); } catch (Exception e) { b.addDnsServer(Prefs.DEFAULT_DNS); }
+            try {
+                InetAddress.getByName(dns);
+                dnsServer = dns;
+            } catch (Exception e) {
+                dnsServer = Prefs.DEFAULT_DNS;
+            }
+            b.addDnsServer(dnsServer);
             b.setMtu(prefs.mtu());
             b.setBlocking(true);
             try { b.addDisallowedApplication(getPackageName()); } catch (Exception ignored) { }
@@ -159,7 +168,7 @@ public class FasVpnService extends VpnService implements Runnable {
             up.set(0); down.set(0); blocked.set(0); connections.set(0);
             PersistTotals.reset();
             flows.clear();
-            logLine("Tunnel up · DNS " + prefs.dns() + " · " + Proxy.describe(prefs));
+            logLine("Tunnel up · DNS " + dnsServer + " · " + Proxy.describe(prefs));
             reader = new Thread(this, "fas-reader");
             reader.start();
             reaper = new Thread(this::reap, "fas-reaper");
@@ -197,7 +206,7 @@ public class FasVpnService extends VpnService implements Runnable {
         if (p == null) return;
         if (p.version == 6) {
             if (prefs.blockIpv6()) blocked.incrementAndGet();
-            return; // no IPv6 relay – traffic is dropped inside the tunnel (leak safe)
+            return;
         }
         int uid = ownerUid(p);
         String pkg = pkgForUid(uid);
@@ -224,6 +233,7 @@ public class FasVpnService extends VpnService implements Runnable {
             Flow f = flows.get(key);
             if (f == null) {
                 if ((p.flags & Net.SYN) == 0) return;
+                if (flows.size() >= 400) return;
                 TcpFlow t = new TcpFlow(p, pkg, key);
                 flows.put(key, t);
                 t.start();
@@ -309,9 +319,9 @@ public class FasVpnService extends VpnService implements Runnable {
 
     private byte[] dnsUdp(Net.Pkt p, byte[] query, String pkg) throws Exception {
         DatagramSocket ds = new DatagramSocket();
-        protect(ds);
+        if (!protect(ds)) throw new Exception("protect(DatagramSocket) failed");
         ds.setSoTimeout(5000);
-        InetAddress server = InetAddress.getByName(prefs.dns());
+        InetAddress server = InetAddress.getByName(dnsServer);
         long d = limits == null ? 0 : limits.delay(pkg, false, query.length);
         if (d > 0) Thread.sleep(d);
         ds.send(new DatagramPacket(query, query.length, server, 53));
@@ -326,7 +336,7 @@ public class FasVpnService extends VpnService implements Runnable {
     }
 
     private byte[] dnsOverTcp(Net.Pkt p, byte[] query, String pkg) throws Exception {
-        InetAddress server = InetAddress.getByName(prefs.dns());
+        InetAddress server = InetAddress.getByName(dnsServer);
         Socket s = Proxy.open(this, prefs, server, 53);
         OutputStream o = s.getOutputStream();
         InputStream i = s.getInputStream();
@@ -404,7 +414,7 @@ public class FasVpnService extends VpnService implements Runnable {
     /* ---------------- TCP ---------------- */
 
     class TcpFlow extends Flow {
-        private final ArrayBlockingQueue<Seg> queue = new ArrayBlockingQueue<>(256);
+        private final ArrayBlockingQueue<Seg> queue = new ArrayBlockingQueue<>(64);
         private volatile long clientNext;
         private volatile long serverSeq;
         private volatile boolean established;
@@ -489,7 +499,7 @@ public class FasVpnService extends VpnService implements Runnable {
                     if (n == 0) continue;
                     long d = limits == null ? 0 : limits.delay(pkg, true, n);
                     if (d > 0) Thread.sleep(d);
-                    write(packet(Net.ACK | Net.PSH, b, n, n));
+                    write(packet(Net.ACK | Net.PSH, b, 0, n));
                     serverSeq += n;
                     down.addAndGet(n);
                     used = System.currentTimeMillis();
@@ -539,7 +549,7 @@ public class FasVpnService extends VpnService implements Runnable {
         @Override void runFlow() {
             try {
                 DatagramSocket ds = new DatagramSocket();
-                protect(ds);
+                if (!protect(ds)) throw new Exception("protect(DatagramSocket) failed");
                 ds.connect(new InetSocketAddress(Net.addr(remoteIp), remotePort));
                 ds.setSoTimeout(60000);
                 socket = ds;

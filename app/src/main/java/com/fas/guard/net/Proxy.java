@@ -25,7 +25,7 @@ public final class Proxy {
         String host = useProxy ? prefs.proxyHost() : dst.getHostAddress();
         int p = useProxy ? prefs.proxyPort() : port;
         Socket s = new Socket();
-        vpn.protect(s);
+        if (!vpn.protect(s)) throw new IOException("protect(Socket) failed");
         s.setTcpNoDelay(true);
         s.connect(new InetSocketAddress(host, p), TIMEOUT);
         s.setSoTimeout(TIMEOUT);

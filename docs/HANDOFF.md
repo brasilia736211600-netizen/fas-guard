@@ -10,7 +10,8 @@
 - **Release asset policy:** only `FASGuard-latest.apk` in the rolling release (versioned APKs are CI artifacts; git tag `v1.0.1` marks the source)
 - **minSdk / target:** 29 (Android 10) / 35
 - **Signing cert SHA-256:** `d6cbd8db8aee40a088f8f388afa33fa9b5f592b4d1135db87e5c76df27000445`
-- **CI status at hand-off:** ✅ green — run `45227931546`, workflow `Build APK`
+- **CI status at hand-off:** ✅ green — run `45228440422`, workflow `Build APK`
+- **Git tag:** `v1.0.1`
 - **Local source:** `/data/data/com.termux/files/home/FAS-Test/FasGuard`
 - **Installable APK on device:** `~/storage/downloads/FASGuard-latest.apk`
 
@@ -171,3 +172,14 @@ When resuming (human or agent):
 5. Keep the phone cool: no local builds, no big downloads, no long-running loops.
 
 **Next task:** P1 — obtain the user's device test results against `docs/TESTPLAN.md`, then triage failures (K1 first).
+
+---
+
+## 9) Session log
+
+### Session 1 — 2026-11-23
+- Built the MVP engine + UI, then set up CI (fixed the `setup-android@v3` failure).
+- Locked the six user decisions (§1); raised `minSdk` to 29.
+- Fixed version injection (manifest pinning) and added stable `FASGuard-latest.apk`.
+- Added continuity docs and secrets for a stable signing key.
+- Handed off at: **waiting for device test results (P1)**.

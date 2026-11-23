@@ -23,10 +23,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install SDK packages
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" | tail -2
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SM="$(find "$SDK" -path '*/cmdline-tools/*/bin/sdkmanager' -type f | head -1)"
+          if [ -z "$SM" ]; then
+            echo "::error::sdkmanager not found under $SDK"; exit 1
+          fi
+          yes | "$SM" --licenses >/dev/null 2>&1 || true
+          "$SM" --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Prepare signing key
         env:

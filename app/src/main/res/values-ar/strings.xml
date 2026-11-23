@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">حارس FAS</string>
+    <string name="channel_name">نفق حارس FAS</string>
+    <string name="service_running">جدار الحماية ومحدّد السرعة يعملان</string>
+</resources>

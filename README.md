@@ -2,7 +2,7 @@
 
 تطبيق أندرويد خفيف يجمع **جدار حماية لكل تطبيق** + **تحديد السرعة** + **سلسلة بروكسي** + **إدارة ملفات VPN** في نفق واحد.
 
-> الحزمة: `com.fas.guard` · أقل إصدار: Android 8.0 (API 26) · الهدف: API 35
+> الحزمة: `com.fas.guard` · أقل إصدار: Android 10 (API 29) · الهدف: API 35 · الإصدار: 1.0.1
 > الحجم: ~53 KB · بدون AndroidX أو Compose أو أي تبعية خارجية.
 
 ---
@@ -38,7 +38,8 @@ https://github.com/brasilia736211600-netizen/fas-guard/releases/latest
 - Shadowsocks / Trojan / SSH / SOCKS4 / V2Ray.
 - تمرير IPv6 (يُحجب حاليًا)، وUDP عبر SOCKS5.
 - إحصاءات لكل تطبيق، ووضع root.
-- الحجب لكل تطبيق على Android 8–9 (تعذّر تحديد UID).
+- الواجهة العربية/RTL (خطة المرحلة P3).
+- دمج OpenVPN داخل التطبيق (المرحلة الأخيرة P6 بقرار المستخدم).
 
 ---
 
@@ -51,7 +52,7 @@ https://github.com/brasilia736211600-netizen/fas-guard/releases/latest
 ```bash
 export ANDROID_HOME="$HOME/Android/Sdk"   # أو ANDROID_JAR=/path/to/android.jar
 ./build.sh
-# الناتج: dist/FASGuard-1.0.0.apk
+# الناتج: dist/FASGuard-1.0.1.apk
 ```
 
 السكربت يستخدم `aapt2 → javac → d8 → zipalign → apksigner` فقط. لا يحتاج Gradle.
@@ -79,6 +80,23 @@ KEYSTORE=fasguard.keystore KEYSTORE_PASS=... KEY_PASS=... ./build.sh
 بدون الأسرار يبني الـ CI بمفتاح مؤقت (قد يتطلب إعادة تثبيت عند التحديث).
 
 ---
+
+## قرارات المشروع (مثبّتة)
+
+| القرار | القيمة |
+|---|---|
+| دمج OpenVPN داخل التطبيق | نعم — **آخر مرحلة** |
+| أقل إصدار أندرويد | 10 (API 29) |
+| لغة الواجهة | عربي + إنجليزي (قيد التنفيذ P3) |
+| التوزيع | APK مباشر عبر GitHub Releases |
+| البناء | GitHub Actions فقط (الهاتف ضعيف) |
+
+## متابعة العمل / الاستكمال
+
+- `AGENTS.md` — قواعد أي وكيل يكمل المشروع.
+- `docs/HANDOFF.md` — حالة المشروع الكاملة ونقطة الاستئناف.
+- `docs/ROADMAP.md` — المراحل والمعايير.
+- `docs/TESTPLAN.md` — خطة الاختبار على الجهاز.
 
 ## البنية
 

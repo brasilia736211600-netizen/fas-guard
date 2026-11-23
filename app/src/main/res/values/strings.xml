@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FAS Guard</string>
+    <string name="channel_name">FAS Guard tunnel</string>
+    <string name="service_running">Firewall and traffic shaper are active</string>
+</resources>

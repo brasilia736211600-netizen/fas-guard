@@ -60,6 +60,12 @@ jobs:
           chmod +x build.sh
           ./build.sh
 
+      - name: Add stable alias
+        run: |
+          APK="$(ls dist/FASGuard-*.apk | grep -v 'latest' | head -1)"
+          cp "$APK" dist/FASGuard-latest.apk
+          ls -lh dist
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

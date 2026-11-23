@@ -81,6 +81,7 @@ public class FasVpnService extends VpnService implements Runnable {
     private final Object writeLock = new Object();
     private final ExecutorService dnsPool = Executors.newFixedThreadPool(2);
     private final Map<String, Long> blockedLog = new ConcurrentHashMap<>();
+    private final Map<Integer, String[]> uidPackages = new ConcurrentHashMap<>();
     private final SimpleDateFormat clock = new SimpleDateFormat("HH:mm:ss", Locale.US);
 
     /* ------------------------------------------------------------------ */
@@ -172,6 +173,8 @@ public class FasVpnService extends VpnService implements Runnable {
             up.set(0); down.set(0); blocked.set(0); connections.set(0);
             PersistTotals.reset();
             flows.clear();
+            uidPackages.clear();
+            blockedLog.clear();
             logLine("Tunnel up · DNS " + dnsServer + " · " + Proxy.describe(prefs));
             reader = new Thread(this, "fas-reader");
             reader.start();
@@ -272,22 +275,24 @@ public class FasVpnService extends VpnService implements Runnable {
         }
     }
 
+    private String[] packagesForUid(int uid) {
+        String[] cached = uidPackages.get(uid);
+        if (cached != null) return cached;
+        String[] pkgs = null;
+        try { pkgs = getPackageManager().getPackagesForUid(uid); } catch (Exception ignored) { }
+        if (pkgs == null || pkgs.length == 0) pkgs = new String[]{"uid" + uid};
+        uidPackages.put(uid, pkgs);
+        return pkgs;
+    }
+
     private String pkgForUid(int uid) {
         if (uid < 0) return "uid?";
-        try {
-            String[] pkgs = getPackageManager().getPackagesForUid(uid);
-            if (pkgs != null && pkgs.length > 0) return pkgs[0];
-        } catch (Exception ignored) { }
-        return "uid" + uid;
+        return packagesForUid(uid)[0];
     }
 
     private boolean isBlocked(int uid) {
         if (uid < 0) return false;
-        try {
-            String[] pkgs = getPackageManager().getPackagesForUid(uid);
-            if (pkgs == null) return false;
-            for (String pk : pkgs) if (prefs.appRule(pk).isBlocked()) return true;
-        } catch (Exception ignored) { }
+        for (String pk : packagesForUid(uid)) if (prefs.isBlocked(pk)) return true;
         return false;
     }
 

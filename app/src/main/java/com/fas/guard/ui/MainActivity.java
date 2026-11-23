@@ -493,7 +493,7 @@ public class MainActivity extends Activity {
         box.addView(spacer(8));
 
         box.addView(tv("VPN / proxy route", 14, TEXT, true));
-        CheckBox proxyOn = check("Route this app through a profile", r.proxy);
+        CheckBox proxyOn = check("Override the global VPN/proxy route", r.proxy);
         List<String> labels = new ArrayList<>();
         final List<String> values = new ArrayList<>();
         labels.add("Inherit global proxy");

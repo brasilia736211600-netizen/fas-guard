@@ -182,6 +182,7 @@ When resuming (human or agent):
 ### Session 2 — 2026-11-23
 - Fixed the connectivity-killing TCP offset bug (K10) → 1.1.0.
 - Added the per-app policy engine + editor, per-app DNS/proxy routing, unit selectors → 1.2.0.
+- Hot-path fix: UID→package names cached per tunnel session (`uidPackages`), avoiding a PackageManager call per packet; per-app proxy switch off now inherits the global route so the global proxy keeps working; UID block checks read the rule map without copying.
 - Standby: awaiting the user's device retest.
 
 ### Session 1 — 2026-11-23

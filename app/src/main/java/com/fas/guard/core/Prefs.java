@@ -164,8 +164,9 @@ public final class Prefs {
     }
 
     public boolean isBlocked(String pkg) {
-        AppRule r = appRule(pkg);
-        return r.isBlocked();
+        ensureRules();
+        AppRule r = rules.get(pkg);
+        return r != null && r.isBlocked();
     }
 
     /* ---------------- limits (internal unit: kbit/s, 0 = unlimited) ---------------- */

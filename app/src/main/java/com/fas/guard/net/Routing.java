@@ -27,7 +27,8 @@ public final class Routing {
 
     public Proxy.Config forApp(String pkg) {
         AppRule r = prefs.appRule(pkg == null ? "" : pkg);
-        if (!r.proxy) return Proxy.Config.direct();
+        // Switch off = no per-app override: keep following the global route.
+        if (!r.proxy) return Proxy.Config.fromPrefs(prefs);
         if (AppRule.ROUTE_DIRECT.equals(r.route)) return Proxy.Config.direct();
         if (r.route != null && !r.route.isEmpty() && !AppRule.ROUTE_INHERIT.equals(r.route)) {
             Proxy.Config c = profiles.get(r.route);

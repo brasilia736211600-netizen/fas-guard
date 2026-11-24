@@ -44,8 +44,8 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 ## P2 — Engine robustness & performance
 
-- [ ] Replace per-flow thread explosion with bounded executor / flow cap
-- [ ] DNS LRU cache with TTL; negative caching optional
+- [x] Combined TCP/UDP flow cap (240) with admission control; shared-executor migration remains
+- [x] DNS LRU cache with TTL (256 entries, 0x20-case-safe); negative caching optional
 - [ ] TCP: receive-window tracking, MSS clamp, better FIN/RST handling, wrap-safe sequence math
 - [ ] UDP: idle timeout tuning; optional UDP-over-SOCKS5 (UDP ASSOCIATE)
 - [ ] Per-app byte counters + top-talkers UI

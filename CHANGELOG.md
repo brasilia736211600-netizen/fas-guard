@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0 — 2026-11-24
+- **TTL-aware DNS cache** (256 entries, LRU): answers are cached per resolver+question, TTLs age correctly, and the query ID/question case are rewritten so strict (0x20) clients accept cached replies.
+- DNS worker pool raised to 4; the pool is recreated safely on tunnel restart.
+- Combined flow cap lowered to 240 (TCP+UDP admission control); UDP can no longer grow unbounded.
+
 ## 1.2.0 — 2026-11-23
 - **Per-app policy editor** (tap any app): firewall on/off, block, speed limit, route, DNS.
 - **Per-app VPN/proxy route**: direct, inherit global, or a saved SOCKS5/HTTP profile.

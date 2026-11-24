@@ -37,6 +37,7 @@ adb shell dumpsys activity services com.fas.guard > fasguard-service.txt
 | T16 | Per-app DNS | App detail → custom DNS → set a resolver → reconnect → use app | Queries for that app go to the custom resolver |
 | T17 | Units | Set 1 MB/s global → reconnect → speed test | ≈8 Mbit/s; switch unit to Mbit/s, value converts live |
 | T18 | Per-app firewall off | App detail → disable firewall → reconnect? (no) → use app | App bypasses block decisions instantly |
+| T19 | DNS cache | Repeat the same site/domain lookups for 2–3 min (browsing, app refresh) | Lookups stay correct (no stale/wrong IPs, no DNS errors); repeat visits feel faster |
 
 ## Nice to have
 - Airplane mode on/off while tunnel is running.

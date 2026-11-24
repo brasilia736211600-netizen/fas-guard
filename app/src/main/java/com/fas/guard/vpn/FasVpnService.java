@@ -17,6 +17,7 @@ import com.fas.guard.R;
 import com.fas.guard.core.AppRule;
 import com.fas.guard.core.Prefs;
 import com.fas.guard.net.Limits;
+import com.fas.guard.net.DnsCache;
 import com.fas.guard.net.Net;
 import com.fas.guard.net.Proxy;
 import com.fas.guard.net.Routing;
@@ -67,6 +68,7 @@ public class FasVpnService extends VpnService implements Runnable {
     private static final AtomicLong connections = new AtomicLong();
     private static final List<String> log = new CopyOnWriteArrayList<>();
     private static final Map<String, Flow> flows = new ConcurrentHashMap<>();
+    private static final int MAX_FLOWS = 240;
 
     private ParcelFileDescriptor tun;
     private FileInputStream in;
@@ -79,7 +81,8 @@ public class FasVpnService extends VpnService implements Runnable {
     private String dnsServer = Prefs.DEFAULT_DNS;
     private Prefs prefs;
     private final Object writeLock = new Object();
-    private final ExecutorService dnsPool = Executors.newFixedThreadPool(2);
+    private ExecutorService dnsPool;
+    private final DnsCache dnsCache = new DnsCache();
     private final Map<String, Long> blockedLog = new ConcurrentHashMap<>();
     private final Map<Integer, String[]> uidPackages = new ConcurrentHashMap<>();
     private final SimpleDateFormat clock = new SimpleDateFormat("HH:mm:ss", Locale.US);
@@ -175,6 +178,8 @@ public class FasVpnService extends VpnService implements Runnable {
             flows.clear();
             uidPackages.clear();
             blockedLog.clear();
+            dnsCache.clear();
+            if (dnsPool == null || dnsPool.isShutdown()) dnsPool = Executors.newFixedThreadPool(4);
             logLine("Tunnel up · DNS " + dnsServer + " · " + Proxy.describe(prefs));
             reader = new Thread(this, "fas-reader");
             reader.start();
@@ -240,7 +245,7 @@ public class FasVpnService extends VpnService implements Runnable {
             Flow f = flows.get(key);
             if (f == null) {
                 if ((p.flags & Net.SYN) == 0) return;
-                if (flows.size() >= 400) return;
+                if (flows.size() >= MAX_FLOWS) return;
                 TcpFlow t = new TcpFlow(p, pkg, key);
                 flows.put(key, t);
                 t.start();
@@ -253,6 +258,7 @@ public class FasVpnService extends VpnService implements Runnable {
         } else if (p.protocol == Net.PROTO_UDP) {
             Flow f = flows.get(key);
             if (f == null) {
+                if (flows.size() >= MAX_FLOWS) return;
                 UdpFlow u = new UdpFlow(p, pkg, key);
                 flows.put(key, u);
                 u.start();
@@ -306,15 +312,27 @@ public class FasVpnService extends VpnService implements Runnable {
     private void resolve(Net.Pkt p, String pkg, byte[] buf) {
         final byte[] query = new byte[p.payloadLen];
         System.arraycopy(buf, p.payloadOff, query, 0, p.payloadLen);
-        dnsPool.execute(() -> {
+        final ExecutorService pool = dnsPool;
+        if (pool == null || pool.isShutdown()) return;
+        pool.execute(() -> {
             try {
                 byte[] answer;
                 Proxy.Config cfg = configFor(pkg);
                 String server = dnsFor(pkg);
-                if (cfg.enabled) {
-                    answer = dnsOverTcp(cfg, server, query, pkg);
+                String cacheKey = DnsCache.key(server, query);
+                answer = cacheKey == null ? null : dnsCache.get(cacheKey);
+                boolean cached = answer != null;
+                if (!cached) {
+                    if (cfg.enabled) {
+                        answer = dnsOverTcp(cfg, server, query, pkg);
+                    } else {
+                        answer = dnsUdp(server, query, pkg);
+                    }
+                    if (answer != null && answer.length >= 2 && cacheKey != null) {
+                        dnsCache.put(cacheKey, answer);
+                    }
                 } else {
-                    answer = dnsUdp(server, query, pkg);
+                    DnsCache.rewriteQuestion(answer, query);
                 }
                 if (answer == null || answer.length == 0) return;
                 long d = limits == null ? 0 : limits.delay(pkg, true, answer.length);
@@ -660,7 +678,10 @@ public class FasVpnService extends VpnService implements Runnable {
         flows.clear();
         try { if (reader != null) reader.interrupt(); } catch (Exception ignored) { }
         try { if (reaper != null) reaper.interrupt(); } catch (Exception ignored) { }
-        try { dnsPool.shutdownNow(); } catch (Exception ignored) { }
+        ExecutorService pool = dnsPool;
+        dnsPool = null;
+        if (pool != null) { try { pool.shutdownNow(); } catch (Exception ignored) { } }
+        dnsCache.clear();
         try { if (in != null) in.close(); } catch (Exception ignored) { }
         try { if (tun != null) tun.close(); } catch (Exception ignored) { }
         tun = null;

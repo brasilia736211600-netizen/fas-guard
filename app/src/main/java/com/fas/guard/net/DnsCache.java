@@ -6,7 +6,6 @@ import java.util.Map;
 /** Small LRU DNS cache with TTL-aware responses (no external dependencies). */
 public final class DnsCache {
     private static final int MAX = 256;
-    private static final int MIN_TTL = 30;
     private static final int MAX_TTL = 3600;
     private static final char[] HEX = "0123456789abcdef".toCharArray();
 
@@ -49,7 +48,7 @@ public final class DnsCache {
         if (ttl <= 0) return;
         int[] offs = ttlOffsets(response);
         if (offs == null) return;
-        map.put(key, new Entry(response.clone(), now, Math.max(MIN_TTL, Math.min(MAX_TTL, ttl)), offs));
+        map.put(key, new Entry(response.clone(), now, Math.max(1, Math.min(MAX_TTL, ttl)), offs));
     }
 
     public synchronized void clear() { map.clear(); }

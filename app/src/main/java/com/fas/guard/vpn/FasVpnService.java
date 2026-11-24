@@ -319,7 +319,10 @@ public class FasVpnService extends VpnService implements Runnable {
                 byte[] answer;
                 Proxy.Config cfg = configFor(pkg);
                 String server = dnsFor(pkg);
-                String cacheKey = DnsCache.key(server, query);
+                String scope = server + (cfg.enabled
+                        ? "|" + cfg.type + ":" + cfg.host + ":" + cfg.port
+                        : "|direct");
+                String cacheKey = DnsCache.key(scope, query);
                 answer = cacheKey == null ? null : dnsCache.get(cacheKey);
                 boolean cached = answer != null;
                 if (!cached) {

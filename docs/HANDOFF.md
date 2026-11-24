@@ -2,16 +2,16 @@
 
 > Purpose: allow **any agent or human** to resume this project after a crash, disconnect or hand-off, without losing context. Update this file at the end of every work session.
 
-- **Last updated:** 2026-11-24 (session 4 — stopped intentionally, resumable)
+- **Last updated:** 2026-11-24 (session 5 — critical TCP repair, resumable)
 - **Owner account:** `brasilia736211600-netizen`
 - **Repository:** https://github.com/brasilia736211600-netizen/fas-guard (public)
 - **Rolling release (direct APK):** https://github.com/brasilia736211600-netizen/fas-guard/releases/latest
-- **Current version:** `1.3.0` (versionCode `5`)
-- **Release asset policy:** only `FASGuard-latest.apk` in the rolling release (versioned APKs are CI artifacts; tags `v1.0.1` … `v1.3.0` mark the sources)
+- **Current version:** `1.4.0` (versionCode `6`)
+- **Release asset policy:** only `FASGuard-latest.apk` in the rolling release (versioned APKs are CI artifacts; tags `v1.0.1` … `v1.4.0` mark the sources)
 - **minSdk / target:** 29 (Android 10) / 35
 - **Signing cert SHA-256:** `d6cbd8db8aee40a088f8f388afa33fa9b5f592b4d1135db87e5c76df27000445`
-- **CI status at hand-off:** ✅ green — run `45413720491`, workflow `Build APK` (commit `ef885d2`)
-- **Git tags:** `v1.0.1`, `v1.1.0`, `v1.2.0`, `v1.3.0` (v1.3.0 = `ef885d2`, the CI-verified source)
+- **CI status at hand-off:** ✅ green — run `45424513592`, workflow `Build APK` (commit `bd0785e`); **Engine self-tests passed before the APK build**
+- **Git tags:** `v1.0.1` … `v1.4.0` (v1.4.0 = `bd0785e`, the CI-verified source)
 - **Local source:** `/data/data/com.termux/files/home/FAS-Test/FasGuard`
 - **Installable APK:** download from the rolling release URL above (the user does not want files written to `Downloads` by the agent)
 
@@ -99,6 +99,8 @@ app/src/main/java/com/fas/guard/
 ├─ net/Proxy.java           outbound sockets; SOCKS5(+auth), HTTP CONNECT(+Basic), Config
 ├─ net/Routing.java         per-app route resolution: inherit/direct/SOCKS5/HTTP
 ├─ net/DnsCache.java        TTL-aware LRU DNS cache (256), question/ID rewrite
+├─ net/TcpRelay.java        pure-Java TCP relay (handshake, window control, half-close)
+├─ tools/                   executable engine tests (run in CI, no Android deps)
 ├─ net/Limits.java          combines global + per-app token buckets
 ├─ net/Rate.java            token bucket (kbit/s → bytes/s, burst 1 s)
 ├─ core/AppRule.java        per-app policy model (firewall/limit/unit/route/DNS) + JSON
@@ -116,7 +118,7 @@ res/values{,-ar}/strings.xml, themes, vector icons
 1. `VpnService.Builder`: `10.111.222.1/24` + `fd00:1:2::1/64`, routes `0.0.0.0/0` + `::/0`, DNS, MTU 1500, self excluded, blocking.
 2. Reader thread parses each packet (`Net.parse`). IPv6 is **dropped** (leak-safe, not relayed).
 3. UID: `ConnectivityManager.getConnectionOwnerUid` → package (cached per session in `uidPackages`) → `Prefs.isBlocked` → drop + counter + throttled log (1/s per package).
-4. TCP: `TcpFlow` (connect via `Proxy.open` using the app's `Routing` config, SYN-ACK, seq/ack tracking, ACK-before-shaping, 1400-byte downlink chunks, FIN/RST, 5-min reaper).
+4. TCP: `TcpFlow` delegates to `TcpRelay`: immediate SYN-ACK, server ISN advances by 1, client data buffered from the first SYN, receive-window accounting, duplicate ACK, half-close, RST on upstream failure, 5-min reaper. `Proxy.open` uses the app's `Routing` config.
 5. UDP: `UdpFlow` (protected connected `DatagramSocket`, bounded outbound queue, 60 s idle). DNS is special-cased: per-app resolver, direct UDP, or DNS-over-TCP through the app's proxy; answers are served from a TTL-aware LRU cache (256 entries) scoped by upstream route.
 6. Shaping: `Limits.delay(pkg, dir, bytes)` sleeps in the per-flow thread (never in the reader).
 
@@ -159,7 +161,7 @@ res/values{,-ar}/strings.xml, themes, vector icons
 | ID | Severity | Issue | Where | Next action |
 |---|---|---|---|---|
 | K1 | **High** | Never tested on a physical device | — | Run `docs/TESTPLAN.md`, collect `adb logcat` |
-| K2 | Med | Simplified TCP stack (no window scaling/SACK, no retransmit recovery) | `TcpFlow` | Soak test; improve in P2 |
+| K2 | Low | No TCP retransmission/TIME_WAIT/window-scale; flow control prevents window overrun and TUN is lossless | `TcpRelay` | Revisit only if device logs show drops; see `docs/ENGINEERING.md` |
 | K3 | Med | Per-flow threads; many flows cost CPU/battery on weak phones | `FasVpnService` | Cap lowered to 240 (TCP+UDP) + per-session UID cache; shared executor remains P2 |
 | K4 | **Fixed** | — | `DnsCache` / `resolve()` | 256-entry TTL-aware LRU; route-scoped keys; short TTLs never extended |
 | K5 | Low | Blocked log is throttled per package, not per connection | `handlePacket` | Fine for now |
@@ -167,7 +169,10 @@ res/values{,-ar}/strings.xml, themes, vector icons
 | K7 | Low | UI strings hardcoded (not bilingual yet) | `MainActivity` | P3 string extraction |
 | K8 | Info | `BootReceiver` auto-start requires prior VPN consent | `BootReceiver` | Documented |
 | K9 | Fixed | versionCode/Name were pinned in the manifest and ignored `aapt2` flags | `AndroidManifest.xml` | Fixed in 1.0.1; inject via `build.sh` only |
-| K10 | **Fixed** | TCP downlink payload used `off=n` instead of `0`, throwing on every data packet and resetting all connections (the reported "internet dies") | `TcpFlow.pump` | Fixed in 1.1.0; verify with T1 |
+| K10 | **Fixed** | Two independent connection killers: (a) downlink payload offset wrong (1.1.0); (b) SYN did not consume a sequence number, so all server data was one byte early and clients discarded it (1.4.0) | `TcpRelay` | Regression test `tools/TcpRelayTest` fails if either invariant is broken |
+| K14 | **Fixed** | Direct upstream sockets kept a 15 s read timeout, resetting idle/streaming connections | `Proxy.open` | Fixed in 1.4.0 (`SO_TIMEOUT=0` after connect) |
+| K15 | **Fixed** | Unauthenticated SOCKS5 greeting declared 1 method but sent 2 bytes | `Proxy.socks5` | Fixed in 1.4.0; exact RFC 1928 framing |
+| K16 | Info | No MSS option/clamp and no window-scale negotiation; baseline TCP only | `Net/TcpRelay` | Usually harmless (1400-byte chunks, unscaled 65535 window); add if device evidence demands |
 | K11 | Info | Per-app VPN profiles are selectable but fall back to global until P6 | `Routing` | Documented in UI |
 | K12 | Info | Per-app limits/routes/DNS are snapshotted at tunnel start; firewall changes apply live | `FasVpnService` | Reconnect after changing shaping/routing/DNS; documented in UI |
 | K13 | Info | `AndroidManifest` must not pin versionCode/Name; `build.sh` injects them | `AndroidManifest.xml` | Keep pinned values out; verify with `aapt2` after CI |
@@ -190,33 +195,41 @@ When resuming (human or agent):
 4. Work in small commits; push each green step; update this file in the same commit.
 5. Keep the phone cool: no local builds, no big downloads, no long-running loops.
 
-**Next task:** P1 — user installs **1.3.0**, re-runs `docs/TESTPLAN.md` (T1 first, then T15–T19) and reports; then triage. P2 remainder if device is unavailable: shared executor/migration, TCP window handling, per-app counters, log export.
+**Next task:** P1 — user installs **1.4.0** and runs `docs/TESTPLAN.md` (T1 first: browsing, video, idle keep-alive >30 s, then T15–T19). If it still fails, capture the **Logs** tab (tunnel/blocked/TCP failure lines) and the Android version/device; do not change transport code without a new failing test. P2 remainder: shared executor, per-app counters, log export.
 
 ---
 
 ## 10) STOP POINT — resume here
 
 **State at stop (2026-11-24):**
-- `main` = `ef885d2` (code) + docs commit (this update); working tree clean.
-- Last CI: **green** run `45413720491` (workflow `Build APK`).
-- Rolling release asset updated `2026-11-24T14:26:24Z`; **verified** by downloading into `build/` (deleted afterwards):
-  - `versionCode=5`, `versionName=1.3.0`, `minSdk=29`, `package=com.fas.guard`
+- `main` = `bd0785e` (code) + docs commit (this update); working tree clean.
+- Last CI: **green** run `45424513592` (workflow `Build APK`); the **Engine self-tests** step passed before the build.
+- Rolling release asset updated `2026-11-24T15:22:15Z`; **verified** by downloading into `build/` (deleted afterwards):
+  - `versionCode=6`, `versionName=1.4.0`, `minSdk=29`, `package=com.fas.guard`
   - cert SHA-256 = `d6cbd8db8aee40a088f8f388afa33fa9b5f592b4d1135db87e5c76df27000445`
-  - APK SHA-256 = `9f925cc921debed91ca63c5ac980a8d98ff1c48663d006516f3cb4bc8e45780f`
-- Features included: per-app policy/route/DNS + units, UID cache, TTL-aware DNS LRU cache, 240-flow cap, 1.1.0 TCP fix.
+  - APK SHA-256 = `8d3148a1985e7ec8ed2f32283374c74b7641dece259f8515d8fe399f9868b22c`
+- Features included: per-app policy/route/DNS + units, UID cache, TTL-aware DNS cache, flow caps, **TCP sequencing/flow-control/half-close repair**, **CI engine self-tests**.
+- Evidence: `TcpRelayTest` fails if the SYN+1 invariant is reverted (verified by a mutant build).
 
 **Resume steps:**
 1. `cd /data/data/com.termux/files/home/FAS-Test/FasGuard && git fetch && git status && git log --oneline -3`
 2. `gh run list -R brasilia736211600-netizen/fas-guard -L 3` → confirm green.
-3. Ask the user for the device test result (T1 first). If they have not installed 1.3.0, remind them of the release URL.
+3. Ask the user for the device test result (T1 first). If they have not installed 1.4.0, remind them of the release URL.
 4. On failure: reproduce/triage from `docs/TESTPLAN.md`, fix in a small commit, push, wait for green CI, re-verify release metadata (versionCode/minSdk/cert), update this file.
-5. On success: mark P1 done in `docs/ROADMAP.md`, then start P2 (DNS LRU cache + shared executor/flow scheduler) unless the user reprioritizes.
+5. On success: mark P1 done in `docs/ROADMAP.md`, then continue P2 (shared executor, per-app counters, log export) unless the user reprioritizes. On failure: add a failing test first, then fix; never ship transport changes without it.
 
 **Do not:** build locally, write files to `Downloads`/temp, force-push, or start P6 (native OpenVPN) before P1–P5.
 
 ---
 
 ## 9) Session log
+
+### Session 5 — 2026-11-24 (critical repair)
+- Root-caused the persistent “internet dies”: the SYN did not consume a sequence number, so server data started at `SYN` instead of `SYN+1`; every client dropped it (DNS/UDP still worked, masking the fault).
+- Extracted `TcpRelay` as a pure-Java, testable relay; fixed immediate SYN-ACK + buffering, receive-window flow control, duplicate ACK, client-FIN ACK, half-close, and per-flow sequence locking.
+- Fixed direct-socket `SO_TIMEOUT=0`, SOCKS5 no-auth greeting framing, DNS-over-TCP timeout, and conditional flow-map removal.
+- Added `tools/run-tests.sh` (checksums, TCP handshake/data/half-close/window, DNS TTL/case/expiry) as a **CI gate**; verified a mutant (SYN not incremented) makes it fail.
+- CI `45424513592` green; release 1.4.0 metadata verified; tagged `v1.4.0`. See `docs/ENGINEERING.md` for the RCA and invariants.
 
 ### Session 4 — 2026-11-24 (stop point)
 - Added `DnsCache` (TTL-aware LRU, 256 entries, route-scoped keys, short-TTL-safe, question/ID rewrite) and integrated it into `resolve()`; DNS pool 4, recreated safely per tunnel.

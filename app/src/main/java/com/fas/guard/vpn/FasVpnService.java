@@ -21,6 +21,7 @@ import com.fas.guard.net.DnsCache;
 import com.fas.guard.net.Net;
 import com.fas.guard.net.Proxy;
 import com.fas.guard.net.Routing;
+import com.fas.guard.net.TcpRelay;
 import com.fas.guard.ui.MainActivity;
 
 import java.io.FileInputStream;
@@ -380,6 +381,7 @@ public class FasVpnService extends VpnService implements Runnable {
     private byte[] dnsOverTcp(Proxy.Config cfg, String serverAddr, byte[] query, String pkg) throws Exception {
         InetAddress server = InetAddress.getByName(serverAddr);
         Socket s = Proxy.open(this, cfg, server, 53);
+        s.setSoTimeout(5000);
         OutputStream o = s.getOutputStream();
         InputStream i = s.getInputStream();
         byte[] len = new byte[]{(byte) (query.length >> 8), (byte) query.length};
@@ -456,128 +458,35 @@ public class FasVpnService extends VpnService implements Runnable {
     /* ---------------- TCP ---------------- */
 
     class TcpFlow extends Flow {
-        private final ArrayBlockingQueue<Seg> queue = new ArrayBlockingQueue<>(64);
-        private volatile long clientNext;
-        private volatile long serverSeq;
-        private volatile boolean established;
-        private volatile boolean clientFin;
-        private Socket socket;
+        private final TcpRelay relay;
 
         TcpFlow(Net.Pkt p, String pkg, String key) {
             super(p, pkg, key);
-            this.clientNext = p.seq + 1;
-            this.serverSeq = 0x10000000L + (System.nanoTime() & 0xFFFF);
+            relay = new TcpRelay(localIp, localPort, remoteIp, remotePort,
+                    p.seq, 0x10000000L + (System.nanoTime() & 0xFFFF),
+                    new TcpRelay.Sink() {
+                        @Override public void send(byte[] packet) { write(packet); }
+                        @Override public void log(String message) { logLine(pkg + ": " + message); }
+                        @Override public long delay(boolean down, int bytes) {
+                            return limits == null ? 0 : limits.delay(pkg, down, bytes);
+                        }
+                        @Override public void up(int bytes) { up.addAndGet(bytes); }
+                        @Override public void down(int bytes) { down.addAndGet(bytes); }
+                    },
+                    () -> Proxy.open(FasVpnService.this, configFor(pkg), Net.addr(remoteIp), remotePort),
+                    CHUNK);
         }
 
-        @Override void start() {
-            super.start();
-        }
-
-        void onPacket(Net.Pkt p, byte[] buf) {
-            used = System.currentTimeMillis();
-            if ((p.flags & Net.RST) != 0) {
-                close();
-                return;
-            }
-            if (p.payloadLen > 0) {
-                byte[] data = new byte[p.payloadLen];
-                System.arraycopy(buf, p.payloadOff, data, 0, data.length);
-                queue.offer(new Seg(p.seq, data, false));
-            }
-            if ((p.flags & Net.FIN) != 0) {
-                queue.offer(new Seg(p.seq + p.payloadLen, new byte[0], true));
-            }
-        }
+        void onPacket(Net.Pkt p, byte[] buf) { used = System.currentTimeMillis(); relay.onPacket(p, buf); }
 
         @Override void runFlow() {
-            try {
-                socket = Proxy.open(FasVpnService.this, configFor(pkg), Net.addr(remoteIp), remotePort);
-                socket.setTcpNoDelay(true);
-                established = true;
-                write(packet(Net.SYN | Net.ACK, null, 0, 0));
-                Thread t = new Thread(this::pump, "fas-tcp-rx");
-                t.start();
-                while (!closed) {
-                    Seg s = queue.take();
-                    if (s.fin) {
-                        clientFin = true;
-                        sendFin();
-                        break;
-                    }
-                    long end = s.seq + s.data.length;
-                    int skip = 0;
-                    if (end <= clientNext) continue;
-                    if (s.seq < clientNext) skip = (int) (clientNext - s.seq);
-                    int n = s.data.length - skip;
-                    if (n > 0) {
-                        clientNext = end;
-                        write(packet(Net.ACK, null, 0, 0));
-                        long d = limits == null ? 0 : limits.delay(pkg, false, n);
-                        if (d > 0) Thread.sleep(d);
-                        socket.getOutputStream().write(s.data, skip, n);
-                        socket.getOutputStream().flush();
-                        up.addAndGet(n);
-                    } else {
-                        write(packet(Net.ACK, null, 0, 0));
-                    }
-                }
-            } catch (Exception e) {
-                if (!closed) {
-                    write(packet(Net.RST | Net.ACK, null, 0, 0));
-                    logLine("TCP " + pkg + " → " + Net.ipString(remoteIp) + ":" + remotePort + " failed: " + e.getMessage());
-                }
-            } finally {
-                close();
-            }
-        }
-
-        private void pump() {
-            byte[] b = new byte[CHUNK];
-            try {
-                InputStream is = socket.getInputStream();
-                while (!closed) {
-                    int n = is.read(b);
-                    if (n < 0) break;
-                    if (n == 0) continue;
-                    long d = limits == null ? 0 : limits.delay(pkg, true, n);
-                    if (d > 0) Thread.sleep(d);
-                    write(packet(Net.ACK | Net.PSH, b, 0, n));
-                    serverSeq += n;
-                    down.addAndGet(n);
-                    used = System.currentTimeMillis();
-                }
-                if (!clientFin) sendFin();
-            } catch (Exception e) {
-                if (!closed) write(packet(Net.RST | Net.ACK, null, 0, 0));
-            } finally {
-                close();
-            }
-        }
-
-        private void sendFin() {
-            try {
-                if (socket != null && !socket.isOutputShutdown()) socket.shutdownOutput();
-            } catch (Exception ignored) { }
-            write(packet(Net.FIN | Net.ACK, null, 0, 0));
-            serverSeq++;
-        }
-
-        private byte[] packet(int flags, byte[] data, int off, int n) {
-            return Net.buildTcp(remoteIp, remotePort, localIp, localPort, serverSeq, clientNext,
-                    flags, data, off, n, 0xFFFF);
+            try { relay.run(); } finally { close(); }
         }
 
         @Override void close() {
+            relay.close();
             super.close();
-            try { if (socket != null) socket.close(); } catch (Exception ignored) { }
         }
-    }
-
-    static final class Seg {
-        final long seq;
-        final byte[] data;
-        final boolean fin;
-        Seg(long seq, byte[] data, boolean fin) { this.seq = seq; this.data = data; this.fin = fin; }
     }
 
     /* ---------------- UDP ---------------- */

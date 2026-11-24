@@ -46,6 +46,9 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 - [x] Combined TCP/UDP flow cap (240) with admission control; shared-executor migration remains
 - [x] DNS LRU cache with TTL (256 entries, 0x20-case-safe); negative caching optional
+- [x] Executable engine tests in CI: checksums, TCP ISN/handshake/data/half-close, receive-window flow control, DNS TTL/case/expiry
+- [x] TCP receive-window flow control and safe half-close
+- [ ] TCP retransmission/TIME_WAIT and window-scale negotiation (only if device testing shows a need)
 - [ ] TCP: receive-window tracking, MSS clamp, better FIN/RST handling, wrap-safe sequence math
 - [ ] UDP: idle timeout tuning; optional UDP-over-SOCKS5 (UDP ASSOCIATE)
 - [ ] Per-app byte counters + top-talkers UI

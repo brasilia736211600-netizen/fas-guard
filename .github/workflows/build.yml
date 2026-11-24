@@ -25,6 +25,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Engine self-tests
+        run: bash tools/run-tests.sh
+
       - name: Install SDK packages
         run: |
           set -euo pipefail

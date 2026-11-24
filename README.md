@@ -21,6 +21,14 @@ https://github.com/brasilia736211600-netizen/fas-guard/releases/latest
 
 ---
 
+## اختبارات المحرّك (إلزامية قبل أي إصدار)
+
+```bash
+bash tools/run-tests.sh
+```
+
+تغطي: صحة checksums، تسلسل TCP وSYN+1، نقل البيانات وhalf-close، التحكم بنافذة الاستقبال، وذاكرة DNS (TTL/الحالة/الانتهاء). أي فشل يوقف CI.
+
 ## الميزات الحالية
 
 - **جدار حماية لكل تطبيق**: حجب/سماح بالاعتماد على UID المالك للحزمة (Android 10+)، دون root.

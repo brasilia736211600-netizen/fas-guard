@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0 — 2026-11-24
+Critical transport fixes, now covered by an executable engine test suite in CI:
+- **TCP sequence numbers corrected**: the SYN consumed a sequence number, so server data started one byte early and every client dropped it. Data now starts at `SYN+1`.
+- **SYN-ACK is sent immediately**, then the upstream socket is opened; client data is buffered, duplicates are ACKed, and connect failures return RST.
+- **TCP receive-window flow control**: the relay never sends beyond the client's advertised window and waits for window updates.
+- **Half-close fixed**: a client FIN shuts down upstream output only; the server response is still delivered before the final FIN.
+- **Direct sockets no longer inherit a 15 s read timeout** (this reset idle/streaming connections).
+- **SOCKS5 greeting fixed** for unauthenticated proxies (exact method count/length).
+- **DNS-over-TCP read timeout** (5 s) so the DNS pool cannot hang.
+- Added `tools/run-tests.sh`: packet checksums, TCP handshake/data/half-close, window control, DNS TTL/case/expiry. CI fails if any test fails.
+
 ## 1.3.0 — 2026-11-24
 - **TTL-aware DNS cache** (256 entries, LRU): answers are cached per resolver+question, TTLs age correctly, and the query ID/question case are rewritten so strict (0x20) clients accept cached replies.
 - DNS worker pool raised to 4; the pool is recreated safely on tunnel restart.

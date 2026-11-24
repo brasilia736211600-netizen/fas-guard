@@ -23,6 +23,7 @@ public final class Net {
         public long seq;
         public long ack;
         public int flags;
+        public int window;
         public int payloadOff;
         public int payloadLen;
         public int totalLen;
@@ -109,6 +110,7 @@ public final class Net {
             p.ack = u32(b, off + 8);
             int doff = ((b[off + 12] & 0xF0) >> 4) * 4;
             p.flags = u8(b, off + 13);
+            p.window = u16(b, off + 14);
             p.payloadOff = off + doff;
             p.payloadLen = Math.max(0, end - p.payloadOff);
         } else if (p.protocol == PROTO_UDP) {

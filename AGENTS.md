@@ -12,6 +12,7 @@
 6. Every push to `main` must keep CI green. Check with `gh run list -R brasilia736211600-netizen/fas-guard`.
 7. **Work only inside this repo.** Do not write to `~/storage/downloads`, `/tmp`, or Termux temp dirs. Deliver APKs through the GitHub release URL; verify them by downloading into `build/` and deleting afterwards.
 8. At the end of every session, update `docs/HANDOFF.md`: commit, CI run, verified release metadata, next task, and a **STOP POINT** if pausing. Leave the tree clean.
+9. **Transport changes require an executable test.** Add/extend a test in `tools/` that fails on the old behavior and passes on the fix; `bash tools/run-tests.sh` must pass locally and in CI. Compilation alone is never evidence. See `docs/ENGINEERING.md`.
 
 ## Publish path
 
@@ -28,6 +29,7 @@ gh release view latest -R brasilia736211600-netizen/fas-guard
 ## What "done" means
 
 A task is done only when:
+- `bash tools/run-tests.sh` passes,
 - CI run for the pushed commit is green,
 - `FASGuard-<version>.apk` exists in the `latest` release,
 - the APK is signed with the certificate `SHA-256 d6cbd8db…00445` (see HANDOFF),

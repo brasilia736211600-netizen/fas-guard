@@ -64,8 +64,8 @@ public final class Proxy {
         if (!vpn.protect(s)) throw new IOException("protect(Socket) failed");
         s.setTcpNoDelay(true);
         s.connect(new InetSocketAddress(host, p), TIMEOUT);
+        if (!useProxy) { s.setSoTimeout(0); return s; }
         s.setSoTimeout(TIMEOUT);
-        if (!useProxy) return s;
         if ("http".equalsIgnoreCase(cfg.type)) httpConnect(s, cfg, dst.getHostAddress(), port);
         else socks5(s, cfg, dst, port);
         s.setSoTimeout(0);
@@ -76,7 +76,7 @@ public final class Proxy {
         OutputStream out = s.getOutputStream();
         InputStream in = s.getInputStream();
         boolean auth = !cfg.user.isEmpty();
-        out.write(new byte[]{5, (byte) (auth ? 2 : 1), 0, (byte) (auth ? 2 : 0)});
+        out.write(auth ? new byte[]{5, 2, 0, 2} : new byte[]{5, 1, 0});
         out.flush();
         byte[] r = readN(in, 2);
         if (r[1] == (byte) 0xFF) throw new IOException("SOCKS5: no acceptable auth method");
@@ -166,7 +166,8 @@ public final class Proxy {
             s.connect(new InetSocketAddress(prefs.proxyHost(), prefs.proxyPort()), 6000);
             if ("socks5".equalsIgnoreCase(prefs.proxyType())) {
                 OutputStream out = s.getOutputStream();
-                out.write(new byte[]{5, 1, 0});
+                boolean auth = !prefs.proxyUser().isEmpty();
+                out.write(auth ? new byte[]{5, 2, 0, 2} : new byte[]{5, 1, 0});
                 out.flush();
                 byte[] r = readN(s.getInputStream(), 2);
                 if (r[0] != 5) return "Not a SOCKS5 server";

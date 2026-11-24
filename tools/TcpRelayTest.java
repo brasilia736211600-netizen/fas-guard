@@ -80,6 +80,7 @@ public class TcpRelayTest {
         ByteArrayOutputStream got = new ByteArrayOutputStream();
         long expected = firstServerSeq;
         boolean fin = false;
+        boolean finAcked = false;
         long deadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < deadline) {
             byte[] pkt = out.poll(200, TimeUnit.MILLISECONDS);
@@ -87,6 +88,7 @@ public class TcpRelayTest {
             Net.Pkt p = Net.parse(pkt, pkt.length);
             if (p == null) continue;
             if ((p.flags & Net.RST) != 0) throw new RuntimeException("got RST: " + new String(pkt));
+            if ((p.flags & Net.ACK) != 0 && p.payloadLen == 0 && p.ack == ((clientNext + 1) & 0xFFFFFFFFL)) finAcked = true;
             if (p.payloadLen > 0) {
                 check(p.seq == expected, "server data seq " + p.seq + " expected " + expected);
                 byte[] payload = new byte[p.payloadLen];
@@ -101,6 +103,7 @@ public class TcpRelayTest {
         runner.join(2000);
         server.join(2000);
         check(fin, "server FIN not received");
+        check(finAcked, "client FIN was not ACKed");
         check(java.util.Arrays.equals(got.toByteArray(), response), "response mismatch: " + new String(got.toByteArray()));
         check(java.util.Arrays.equals(received.toByteArray(), request), "request mismatch: " + new String(received.toByteArray()));
         check(relay.isClosed(), "relay did not close");

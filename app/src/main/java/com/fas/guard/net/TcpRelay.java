@@ -117,6 +117,9 @@ public final class TcpRelay {
                 if (closed) break;
                 if (s.fin) {
                     clientFin = true;
+                    long diff = (s.seq - clientNext) & 0xFFFFFFFFL;
+                    if (diff == 0) clientNext = addSeq(s.seq, 1);
+                    writeAck();
                     try { if (!socket.isOutputShutdown()) socket.shutdownOutput(); } catch (Exception ignored) { }
                     continue;
                 }

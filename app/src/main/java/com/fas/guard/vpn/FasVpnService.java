@@ -450,7 +450,7 @@ public class FasVpnService extends VpnService implements Runnable {
         void close() {
             if (closed) return;
             closed = true;
-            flows.remove(key);
+            flows.remove(key, this);
             try { if (thread != null) thread.interrupt(); } catch (Exception ignored) { }
         }
     }
@@ -572,10 +572,7 @@ public class FasVpnService extends VpnService implements Runnable {
             long now = System.currentTimeMillis();
             for (Map.Entry<String, Flow> e : flows.entrySet()) {
                 Flow f = e.getValue();
-                if (now - f.used > 300000 && now - f.created > 60000) {
-                    f.close();
-                    flows.remove(e.getKey());
-                }
+                if (now - f.used > 300000 && now - f.created > 60000) f.close();
             }
             updateNotification();
             PersistTotals.tick(prefs, up.get(), down.get());
